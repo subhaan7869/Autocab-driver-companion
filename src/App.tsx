@@ -26,7 +26,8 @@ import {
   DollarSign,
   Briefcase,
   ExternalLink,
-  Volume2
+  Volume2,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -38,6 +39,18 @@ import MessagePanel from './components/MessagePanel';
 import ProfilePanel from './components/ProfilePanel';
 import EarningsPanel from './components/EarningsPanel';
 import SliderButton from './components/SliderButton';
+import PreBookingsPanel from './components/PreBookingsPanel';
+
+// Audio Synthesizers
+import {
+  playOfferChime,
+  playAcceptChime,
+  playMessageChime,
+  playArrivedChime,
+  playMeterStartChime,
+  playCashSettlementChime,
+  playWarningBuzzer
+} from './utils/audio';
 
 // Types
 import { 
@@ -169,7 +182,7 @@ export default function App() {
   const [pinError, setPinError] = useState(false);
 
   // App Layout State (Mimics Hamburger menu drawer rather than bottom tabs)
-  const [activeSubView, setActiveSubView] = useState<'HOME' | 'SHEETS' | 'DOCS' | 'MESSENGER' | 'SETTINGS'>('HOME');
+  const [activeSubView, setActiveSubView] = useState<'HOME' | 'SHEETS' | 'DOCS' | 'MESSENGER' | 'PRE_BOOKINGS' | 'SETTINGS'>('HOME');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [driverOnline, setDriverOnline] = useState(true); // default to online to show zone listings
   const [driverStatus, setDriverStatus] = useState<DriverStatus>('AVAILABLE');
@@ -258,6 +271,94 @@ export default function App() {
     }
   }, [jobStatus, currentJob]);
 
+  // Automated random job dispatch
+  useEffect(() => {
+    if (!loggedIn || !driverOnline || driverStatus !== 'AVAILABLE' || jobStatus !== 'NONE') {
+      return;
+    }
+
+    const checkInterval = setInterval(() => {
+      // 50% chance of getting a job offer every 8 seconds
+      if (Math.random() > 0.5) {
+        const randomNames = [
+          'Dale Henderson', 'Sarah Connor', 'James Faulkner', 'Emily Watson', 
+          'Oliver Twist', 'Charlotte Bronte', 'Arthur Dent', 'Ford Prefect', 
+          'Harry Potter', 'Hermione Granger', 'Ron Weasley', 'Diana Prince', 
+          'Bruce Wayne', 'Clark Kent', 'Tony Stark'
+        ];
+        const passengerName = randomNames[Math.floor(Math.random() * randomNames.length)];
+        
+        // Select random pickup and destination from landmarks
+        const landmarkKeys = Object.keys(MAP_LANDMARKS);
+        const pickupKey = landmarkKeys[Math.floor(Math.random() * landmarkKeys.length)];
+        let destKey = landmarkKeys[Math.floor(Math.random() * landmarkKeys.length)];
+        while (destKey === pickupKey) {
+          destKey = landmarkKeys[Math.floor(Math.random() * landmarkKeys.length)];
+        }
+
+        const pickupPoint = MAP_LANDMARKS[pickupKey];
+        const destPoint = MAP_LANDMARKS[destKey];
+
+        // Calculate distance based on map coordinates
+        const dx = pickupPoint.x - destPoint.x;
+        const dy = pickupPoint.y - destPoint.y;
+        const distUnit = Math.sqrt(dx * dx + dy * dy);
+        const distance = Math.max(1.2, Number((distUnit / 15).toFixed(1))); 
+
+        // Calculate fare
+        const baseFare = 4.50;
+        const perMileRate = 1.85;
+        const fareAmount = Number((baseFare + distance * perMileRate).toFixed(2));
+
+        const randomBooking: Booking = {
+          id: `booking-${Date.now().toString().slice(-4)}`,
+          passengerName,
+          phone: `+44 7${Math.floor(100000000 + Math.random() * 900000000)}`,
+          pickup: {
+            lat: 53.9579 + (pickupPoint.y - 350) * 0.0005,
+            lng: -1.0929 + (pickupPoint.x - 420) * 0.0005,
+            name: pickupKey
+          },
+          destination: {
+            lat: 53.9579 + (destPoint.y - 350) * 0.0005,
+            lng: -1.0929 + (destPoint.x - 420) * 0.0005,
+            name: destKey
+          },
+          fareType: Math.random() > 0.4 ? 'CARD' : 'CASH',
+          fareAmount,
+          distance,
+          estimatedDuration: Math.max(3, Math.round(distance * 1.5)),
+          specialNotes: Math.random() > 0.5 ? 'Automatic dispatch request. Contact passenger via VoIP if required.' : 'Standard passenger run.',
+          offeredAt: Date.now()
+        };
+
+        setCurrentJob(randomBooking);
+        setJobStatus('OFFERED');
+        setActiveSubView('HOME'); // auto jump back home to show job offer screen
+
+        // Play alert chime
+        playOfferChime();
+      }
+    }, 8000);
+
+    return () => clearInterval(checkInterval);
+  }, [loggedIn, driverOnline, driverStatus, jobStatus]);
+
+  // Incessant repeating job offer alert loop (Real Autocab experience)
+  useEffect(() => {
+    if (jobStatus !== 'OFFERED') return;
+
+    // Play immediately
+    playOfferChime();
+
+    // Repeat every 1.8 seconds while offered
+    const soundInterval = setInterval(() => {
+      playOfferChime();
+    }, 1800);
+
+    return () => clearInterval(soundInterval);
+  }, [jobStatus]);
+
   // Login handler
   const handlePinSubmit = () => {
     if (pinInput === DEFAULT_PROFILE.driverPin) {
@@ -266,51 +367,12 @@ export default function App() {
       setDriverStatus('AVAILABLE');
       setPinInput('');
       setPinError(false);
+      playAcceptChime();
     } else {
       setPinError(true);
       setPinInput('');
-      // play error buzz sound
-      try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sawtooth';
-        osc.frequency.setValueAtTime(120, ctx.currentTime);
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.35);
-      } catch (e) {}
+      playWarningBuzzer();
     }
-  };
-
-  const playAcceptChime = () => {
-    try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      const ctx = audioContextRef.current;
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      const gain = ctx.createGain();
-
-      osc1.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
-      osc2.frequency.setValueAtTime(659.25, ctx.currentTime + 0.15); // E5
-      
-      gain.gain.setValueAtTime(0.1, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-      
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(ctx.destination);
-      
-      osc1.start();
-      osc2.start(ctx.currentTime + 0.15);
-      osc1.stop(ctx.currentTime + 0.4);
-      osc2.stop(ctx.currentTime + 0.4);
-    } catch (e) {}
   };
 
   // Simulate incoming dispatch booking trigger
@@ -352,19 +414,8 @@ export default function App() {
       }
     ]);
 
-    // audio notification
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.3);
-    } catch(e) {}
+    // Audio notification chirp
+    playMessageChime();
   };
 
   // Toggle Driver Online / Offline Status
@@ -377,6 +428,7 @@ export default function App() {
     if (newOnline) {
       setDriverStatus('AVAILABLE');
       setCurrentZone('YORK HOSPITAL');
+      playAcceptChime();
       // Instantly open the "Jobs on Offer" modal (as shown at 00:24)
       setTimeout(() => {
         setJobsOnOfferOpen(true);
@@ -385,6 +437,7 @@ export default function App() {
       setDriverStatus('OFFLINE');
       setCurrentZone(null);
       setJobsOnOfferOpen(false);
+      playWarningBuzzer();
     }
   };
 
@@ -417,17 +470,20 @@ export default function App() {
         isRead: true
       }
     ]);
+    playArrivedChime();
   };
 
   // Passenger On Board Action
   const handlePob = () => {
     setJobStatus('POB');
     setRunningFare(4.50); // initial start base fare
+    playMeterStartChime();
   };
 
   // Soon to Clear Action
   const handleStc = () => {
     setJobStatus('STC');
+    playArrivedChime(); // Soft alert sound for STC
     setTimeout(() => {
       triggerDispatcherMessage("Dispatch York: STC registered. Standby for next allocation once current run clears.");
     }, 4000);
@@ -457,18 +513,7 @@ export default function App() {
     setRunningFare(0.00);
     
     // Play completion sound chime
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.frequency.setValueAtTime(1046.50, ctx.currentTime); // C6
-      gain.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.45);
-    } catch(e) {}
+    playCashSettlementChime();
   };
 
   // Plot into a new zone manually
@@ -510,34 +555,50 @@ export default function App() {
     ]);
   };
 
-  const handleBidOnJob = (jobId: string) => {
+  const handleSecurePreBooking = (id: string) => {
     setBidJobs((prevBids) =>
       prevBids.map((bid) => {
-        if (bid.id === jobId) {
-          const outcome = Math.random() > 0.2 ? 'ACCEPTED' : 'REJECTED';
+        if (bid.id === id) {
+          triggerDispatcherMessage(`Booking Secured: Advance job scheduled for ${bid.pickupTime} has been assigned to you.`);
           
-          if (outcome === 'ACCEPTED') {
-            setTimeout(() => {
-              triggerDispatcherMessage(`Contract Won: Advanced scheduled booking assigned.`);
-              const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-              setEarnings((prev) => [
-                ...prev,
-                {
-                  id: `bid-earn-${Date.now()}`,
-                  date: `${bid.pickupTime} (Sch)`,
-                  fareAmount: bid.fareAmount,
-                  fareType: 'ACCOUNT',
-                  pickup: bid.pickupName,
-                  destination: bid.destinationName
-                }
-              ]);
-            }, 2000);
-          }
-          return { ...bid, status: outcome };
+          // Add to earnings as future scheduled run
+          const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+          setEarnings((prev) => [
+            ...prev,
+            {
+              id: `bid-earn-${Date.now()}`,
+              date: `${bid.pickupTime} (Sch)`,
+              fareAmount: bid.fareAmount,
+              fareType: 'ACCOUNT',
+              pickup: bid.pickupName,
+              destination: bid.destinationName
+            }
+          ]);
+          return { ...bid, status: 'ACCEPTED' };
         }
         return bid;
       })
     );
+  };
+
+  const handleWithdrawPreBooking = (id: string) => {
+    setBidJobs((prevBids) =>
+      prevBids.map((bid) => {
+        if (bid.id === id) {
+          triggerDispatcherMessage(`Booking Cancelled: Advanced scheduled booking withdrawn.`);
+          
+          // Remove from earnings record of scheduled runs
+          setEarnings((prev) => prev.filter(e => e.pickup !== bid.pickupName || !e.date.includes('(Sch)')));
+          return { ...bid, status: 'PENDING' };
+        }
+        return bid;
+      })
+    );
+  };
+
+  const handleInjectedPreBooking = (newJob: BidJob) => {
+    setBidJobs((prevBids) => [newJob, ...prevBids]);
+    triggerDispatcherMessage(`New Pre-Booking Posted: [${newJob.pickupName}] at ${newJob.pickupTime}. Tap Pre-Bookings menu to bid.`);
   };
 
   const handleSendMessage = (text: string) => {
@@ -628,11 +689,8 @@ export default function App() {
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-orange-500/5 rounded-full blur-[140px] pointer-events-none"></div>
       <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-blue-500/5 rounded-full blur-[140px] pointer-events-none"></div>
 
-      {/* Main Grid: Tablet companion on left, Operator Simulation desk on right */}
-      <div className="flex-1 w-full mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-        
-        {/* LEFT COLUMN: PROFESSIONAL WIDESCREEN DRIVER TABLET TERMINAL */}
-        <div className="lg:col-span-8 flex flex-col h-[740px] bg-[#0b0e14] rounded-2xl border border-slate-800 shadow-2xl overflow-hidden relative" id="autocab-companion-screen">
+      {/* PROFESSIONAL WIDESCREEN DRIVER TABLET TERMINAL */}
+      <div className="flex-1 w-full max-w-5xl mx-auto flex flex-col h-[740px] bg-[#0b0e14] rounded-2xl border border-slate-800 shadow-2xl overflow-hidden relative" id="autocab-companion-screen">
           
           {/* logged out state: PIN screen */}
           {!loggedIn ? (
@@ -962,6 +1020,19 @@ export default function App() {
 
                               <button
                                 onClick={() => {
+                                  setActiveSubView('PRE_BOOKINGS');
+                                  setSidebarOpen(false);
+                                }}
+                                className={`w-full text-left p-3.5 rounded-xl font-bold flex items-center gap-3 transition-colors ${
+                                  activeSubView === 'PRE_BOOKINGS' ? 'bg-[#111622] text-white font-black' : 'hover:bg-slate-200/80 text-slate-700'
+                                }`}
+                              >
+                                <Calendar className={`h-4.5 w-4.5 ${activeSubView === 'PRE_BOOKINGS' ? 'text-orange-500' : 'text-slate-500'}`} />
+                                <span className="tracking-wide">PRE-BOOKINGS ({bidJobs.filter(j => j.status === 'PENDING').length})</span>
+                              </button>
+
+                              <button
+                                onClick={() => {
                                   setActiveSubView('MESSENGER');
                                   setSidebarOpen(false);
                                 }}
@@ -1186,15 +1257,15 @@ export default function App() {
                                              const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
                                              const osc = ctx.createOscillator();
                                              const gain = ctx.createGain();
-                                             osc.frequency.setValueAtTime(600, ctx.currentTime);
-                                             gain.gain.setValueAtTime(0.05, ctx.currentTime);
+                                             osc.frequency.setValueAtTime(0, ctx.currentTime);
+                                             gain.gain.setValueAtTime(0.0, ctx.currentTime);
                                              gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
                                              osc.connect(gain);
                                              gain.connect(ctx.destination);
                                              osc.start();
                                              osc.stop(ctx.currentTime + 0.2);
                                            } catch(e) {}
-                                           alert("GPS telemetry synchronized. Distance remaining calculated securely.");
+                                           playMessageChime(); alert("GPS telemetry synchronized. Distance remaining calculated securely.");
                                          }}
                                          className="py-2.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-100/80 rounded-xl flex flex-col items-center justify-center gap-1 cursor-pointer"
                                        >
@@ -1279,20 +1350,8 @@ export default function App() {
 
                     {activeSubView === 'SHEETS' && (
                       <EarningsPanel earnings={earnings} onLynkPay={() => {
-                        // Success payment processing chime!
-                        try {
-                          const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-                          const osc = ctx.createOscillator();
-                          const gain = ctx.createGain();
-                          osc.frequency.setValueAtTime(880, ctx.currentTime);
-                          gain.gain.setValueAtTime(0.1, ctx.currentTime);
-                          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-                          osc.connect(gain);
-                          gain.connect(ctx.destination);
-                          osc.start();
-                          osc.stop(ctx.currentTime + 0.45);
-                          alert("LynkPay Settlement Requested! Your shift balance has been securely queued for bank transfer.");
-                        } catch(e) {}
+                        playCashSettlementChime();
+                        alert("LynkPay Settlement Requested! Your shift balance has been securely queued for bank transfer.");
                       }} />
                     )}
 
@@ -1309,123 +1368,21 @@ export default function App() {
                       />
                     )}
 
+                    {activeSubView === 'PRE_BOOKINGS' && (
+                      <PreBookingsPanel
+                        bidJobs={bidJobs}
+                        onBidAccept={handleSecurePreBooking}
+                        onWithdrawBid={handleWithdrawPreBooking}
+                        onAddCustomPreBooking={handleInjectedPreBooking}
+                      />
+                    )}
+
                   </div>
 
                 </div>
               )}
 
             </div>
-
-        {/* RIGHT COLUMN: DISPATCH COORDINATOR CONTROL CONSOLE */}
-        <div className="lg:col-span-4 flex flex-col gap-5 h-[740px] overflow-y-auto pr-1">
-          <div className="bg-[#121824] rounded-2xl p-5 border border-slate-800 shadow-xl">
-            <h2 className="text-sm font-black font-sans tracking-widest text-emerald-400 uppercase flex items-center gap-2 mb-3">
-              <Tv className="h-5 w-5" /> DISPATCH OPERATIONS CENTER
-            </h2>
-            <p className="text-xs text-slate-400 font-mono leading-relaxed mb-4">
-              Act as the dispatch operator. Fire live situations onto the driver tablet to test compliance documents, tactile swipes, chat presets, and taxi routing.
-            </p>
-
-            <div className="space-y-4">
-              
-              {/* Dispatch trigger */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 font-mono uppercase tracking-wider mb-1.5">
-                  1. Dispatch Booking Offer
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => triggerSimulatedBooking()}
-                    disabled={jobStatus !== 'NONE' || !loggedIn || !driverOnline}
-                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-mono font-bold bg-emerald-500 hover:bg-emerald-400 text-black disabled:bg-slate-850 disabled:text-slate-600 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Play className="h-3.5 w-3.5 fill-black" /> DISPATCH NEXT
-                  </button>
-                  
-                  <select
-                    disabled={jobStatus !== 'NONE' || !loggedIn || !driverOnline}
-                    onChange={(e) => {
-                      const idx = parseInt(e.target.value);
-                      triggerSimulatedBooking(idx);
-                      e.target.value = ''; 
-                    }}
-                    className="bg-slate-900 border border-slate-800 text-slate-300 font-mono text-xs px-2.5 py-1.5 rounded-lg focus:outline-none focus:border-emerald-500 cursor-pointer disabled:bg-slate-850 disabled:text-slate-600"
-                  >
-                    <option value="" disabled>SELECT RIDE...</option>
-                    {PRESET_BOOKINGS.map((p, i) => (
-                      <option key={i} value={i}>{p.passengerName.slice(0,14)} (£{p.fareAmount})</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Warnings Trigger */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 font-mono uppercase tracking-wider mb-1.5">
-                  2. Dispatch Operator Alert Text
-                </label>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    onClick={() => triggerDispatcherMessage("Premier Dispatch: High congestion reported on Wigginton Rd. Delay registered.")}
-                    disabled={!loggedIn}
-                    className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[10px] font-mono rounded text-slate-300 transition-colors disabled:opacity-50"
-                  >
-                    🚧 DELAY INFO
-                  </button>
-                  <button
-                    onClick={() => triggerDispatcherMessage("CRITICAL SECURITY FLAG: Please verify passenger boarding token before starting taxi meter.")}
-                    disabled={jobStatus === 'NONE' || !loggedIn}
-                    className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[10px] font-mono rounded text-slate-300 transition-colors disabled:opacity-50"
-                  >
-                    🚨 TOKEN CHECK
-                  </button>
-                </div>
-              </div>
-
-              {/* Reset Control */}
-              <div className="pt-2 border-t border-slate-800">
-                <button
-                  onClick={() => {
-                    setCurrentJob(null);
-                    setJobStatus('NONE');
-                    setDriverOnline(true);
-                    setDriverStatus('AVAILABLE');
-                    setEarnings([]);
-                    setMessages([
-                      {
-                        id: 'm1',
-                        sender: 'DISPATCH',
-                        text: 'Shift memory initialized. Companion telemetry secure.',
-                        timestamp: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-                        isRead: true,
-                      }
-                    ]);
-                    setActiveSubView('HOME');
-                    setJobsOnOfferOpen(false);
-                  }}
-                  className="w-full py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg text-xs font-mono font-bold text-red-400 flex items-center justify-center gap-1.5 transition-colors"
-                >
-                  <RotateCcw className="h-3.5 w-3.5" /> REBOOT & CLEAR SHIFT
-                </button>
-              </div>
-
-            </div>
-          </div>
-
-          <div className="bg-[#121824]/50 rounded-2xl p-4 border border-slate-800 text-xs font-mono text-slate-400 leading-normal">
-            <div className="flex items-center gap-1.5 text-slate-300 font-bold mb-1.5">
-              <HelpCircle className="h-4 w-4 text-emerald-400" /> COMPANION CHEAT SHEET
-            </div>
-            <ul className="list-disc list-inside space-y-1">
-              <li>Open side-drawer using top-left <span className="text-orange-500 font-bold">☰ Menu</span> button.</li>
-              <li>Login using default credential shift PIN: <span className="text-emerald-400">1234</span>.</li>
-              <li>Toggle <span className="text-emerald-400">ONLINE</span> at screen bottom to pop up local jobs list, or trigger via right console.</li>
-              <li>Swipe the horizontal drawer sliders to progress through ride phases.</li>
-            </ul>
-          </div>
-        </div>
-
-      </div>
 
       {/* JOBS ON OFFER POPUP MODAL (As shown in video at 00:24) */}
       <AnimatePresence>
