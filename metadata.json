@@ -1,6 +1,6 @@
 {
   "name": "Autocab Driver Companion",
   "description": "An interactive simulation of the Autocab Driver Companion tablet application, featuring zone queues, live dispatch jobs, dynamic visual navigation, earnings logging, two-way messaging, and digital driver credentials.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

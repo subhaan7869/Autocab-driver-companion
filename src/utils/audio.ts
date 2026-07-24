@@ -5,14 +5,41 @@
 
 let audioCtx: AudioContext | null = null;
 
-function getAudioContext(): AudioContext {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-  }
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
+export function getAudioContext(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    if (!audioCtx) {
+      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtxClass) {
+        audioCtx = new AudioCtxClass();
+      }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {});
+    }
+  } catch (e) {
+    return null;
   }
   return audioCtx;
+}
+
+// Automatically resume AudioContext on first user interaction
+if (typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    if (audioCtx) {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+    } else {
+      getAudioContext();
+    }
+    window.removeEventListener('pointerdown', unlockAudio);
+    window.removeEventListener('keydown', unlockAudio);
+    window.removeEventListener('touchstart', unlockAudio);
+  };
+  window.addEventListener('pointerdown', unlockAudio, { passive: true });
+  window.addEventListener('keydown', unlockAudio, { passive: true });
+  window.addEventListener('touchstart', unlockAudio, { passive: true });
 }
 
 /**
@@ -21,6 +48,7 @@ function getAudioContext(): AudioContext {
 export function playOfferChime() {
   try {
     const ctx = getAudioContext();
+    if (!ctx || ctx.state === 'suspended') return;
     const now = ctx.currentTime;
     
     // Create a triple-beep rapid sequence
@@ -53,6 +81,7 @@ export function playOfferChime() {
 export function playAcceptChime() {
   try {
     const ctx = getAudioContext();
+    if (!ctx || ctx.state === 'suspended') return;
     const now = ctx.currentTime;
     
     const osc1 = ctx.createOscillator();
@@ -90,6 +119,7 @@ export function playAcceptChime() {
 export function playMessageChime() {
   try {
     const ctx = getAudioContext();
+    if (!ctx || ctx.state === 'suspended') return;
     const now = ctx.currentTime;
     
     [880, 1174.66].forEach((freq, index) => {
@@ -120,6 +150,7 @@ export function playMessageChime() {
 export function playArrivedChime() {
   try {
     const ctx = getAudioContext();
+    if (!ctx || ctx.state === 'suspended') return;
     const now = ctx.currentTime;
     
     const osc = ctx.createOscillator();
@@ -148,6 +179,7 @@ export function playArrivedChime() {
 export function playMeterStartChime() {
   try {
     const ctx = getAudioContext();
+    if (!ctx || ctx.state === 'suspended') return;
     const now = ctx.currentTime;
     
     [0, 0.12].forEach((delay) => {
@@ -178,6 +210,7 @@ export function playMeterStartChime() {
 export function playCashSettlementChime() {
   try {
     const ctx = getAudioContext();
+    if (!ctx || ctx.state === 'suspended') return;
     const now = ctx.currentTime;
     
     // Sweet, bright ringing frequency with standard coin impact pattern
@@ -211,6 +244,7 @@ export function playCashSettlementChime() {
 export function playWarningBuzzer() {
   try {
     const ctx = getAudioContext();
+    if (!ctx || ctx.state === 'suspended') return;
     const now = ctx.currentTime;
     
     const osc = ctx.createOscillator();

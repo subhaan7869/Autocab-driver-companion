@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Clock, ShieldAlert, CreditCard, Landmark, DollarSign, Users, Check, X, Copy, MapPin } from 'lucide-react';
 import { Booking, JobStatus } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import { playOfferChime, playCashSettlementChime } from '../utils/audio';
 
 interface JobPanelProps {
   currentJob: Booking | null;
@@ -26,8 +27,6 @@ export default function JobPanel({
   // Slide track for acceptance
   const [acceptSlide, setAcceptSlide] = useState(0);
   const [completeSlide, setCompleteSlide] = useState(0);
-  
-  const audioContextRef = useRef<AudioContext | null>(null);
 
   // Sync payment type with booking
   useEffect(() => {
@@ -36,39 +35,13 @@ export default function JobPanel({
     }
   }, [currentJob]);
 
-  // Synthesize Autocab chime beep when offered
-  const playOfferedSound = () => {
-    try {
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      }
-      const ctx = audioContextRef.current;
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
-      
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      gain.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.25);
-    } catch (e) {}
-  };
-
   // Job countdown timer
   useEffect(() => {
     if (jobStatus !== 'OFFERED') return;
 
     setCountdown(15);
-    playOfferedSound();
-    const beepInterval = setInterval(playOfferedSound, 1500);
+    playOfferChime();
+    const beepInterval = setInterval(playOfferChime, 1500);
 
     const timer = setInterval(() => {
       setCountdown((prev) => {
@@ -116,19 +89,7 @@ export default function JobPanel({
     if (val >= 90) {
       setCompleteSlide(100);
       onClear(finalFare);
-      // Play register sound
-      try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.frequency.setValueAtTime(1200, ctx.currentTime);
-        gain.gain.setValueAtTime(0.08, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.35);
-      } catch (e) {}
+      playCashSettlementChime();
       setTimeout(() => setCompleteSlide(0), 1000);
     }
   };
