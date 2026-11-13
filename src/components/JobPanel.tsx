@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Clock, ShieldAlert, CreditCard, Landmark, DollarSign, Users, Check, X, Copy, MapPin } from 'lucide-react';
+import { Clock, ShieldAlert, CreditCard, Landmark, DollarSign, Users, Check, X, Copy, MapPin, Gavel } from 'lucide-react';
 import { Booking, JobStatus } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { playOfferChime, playCashSettlementChime } from '../utils/audio';
@@ -9,6 +9,7 @@ interface JobPanelProps {
   jobStatus: JobStatus;
   onAcceptJob: () => void;
   onRejectJob: () => void;
+  onCounterBid?: () => void;
   onClear: (finalFare: number) => void;
 }
 
@@ -17,6 +18,7 @@ export default function JobPanel({
   jobStatus,
   onAcceptJob,
   onRejectJob,
+  onCounterBid,
   onClear,
 }: JobPanelProps) {
   const [countdown, setCountdown] = useState(15);
@@ -224,6 +226,17 @@ export default function JobPanel({
                 </div>
               </div>
             </div>
+
+            {/* Decline & Bid Counter-Offer Button */}
+            {onCounterBid && (
+              <button
+                onClick={onCounterBid}
+                className="w-full py-3 bg-purple-950/70 hover:bg-purple-900 border border-purple-800 text-purple-300 font-mono text-[11px] font-black rounded-xl uppercase flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg active:scale-95"
+              >
+                <Gavel className="h-4 w-4 text-purple-400" />
+                <span>DECLINE £{currentJob.fareAmount.toFixed(2)} & BID ON THIS JOB (AUCTION)</span>
+              </button>
+            )}
 
           </div>
         </div>
